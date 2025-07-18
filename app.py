@@ -1,6 +1,10 @@
 import streamlit as st
 import requests
 
+
+# Define the model you want to use
+MODEL = "mistralai/mistral-small-3.2-24b-instruct:free"
+
 # ------------------ SETTINGS ------------------
 st.set_page_config(page_title="LawGuide", layout="centered")
 st.title("⚖️ LawGuide - Your Legal AI Assistant (India)")
