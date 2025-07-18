@@ -19,7 +19,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ------------------ OPENROUTER API CONFIG ------------------
-OPENROUTER_API_KEY = "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"
+
+API_KEY = st.secrets["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"]
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
