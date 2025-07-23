@@ -1,70 +1,72 @@
 import streamlit as st
 import requests
+import json
 import os
 
-# ------------------ SETTINGS ------------------
-st.set_page_config(page_title="LawGuide", layout="centered")
-st.title("⚖️ LawGuide - Your Legal AI Assistant (India)")
-st.markdown("💬 Ask your legal questions in **Hinglish** (Hindi + English mix).")
+st.set_page_config(page_title="LawGuide AI", layout="centered")
 
-# ------------------ CUSTOM CSS ------------------
-st.markdown("""
-    <style>
-    .stChatMessage { background-color: #1e1e1e; padding: 10px; border-radius: 10px; margin-bottom: 10px; }
-    .stTextInput > div > input { border: 1px solid red; }
-    </style>
-""", unsafe_allow_html=True)
+st.title("⚖️ LawGuide AI")
+st.caption("Chat with a Hinglish-speaking Indian legal assistant powered by OpenRouter")
 
-# ------------------ OPENROUTER CONFIG ------------------
-MODEL = "mistralai/mistral-small-3.2-24b-instruct:free"
-API_URL = "https://openrouter.ai/api/v1/chat/completions"
-
-# ✅ Get API key from environment variable
-if "API_KEY" not in os.environ:
-    st.error("❌ API key not found. Please add it in your Render environment variables as 'API_KEY'.")
+# 💡 Replace this with your real OpenRouter API key
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY")
+if not OPENROUTER_API_KEY:
+    st.error("🚨 Please set your OpenRouter API Key as an environment variable or secret.")
     st.stop()
 
-OPENROUTER_API_KEY = os.environ["API_KEY"]
+MODEL = "mistralai/mistral-7b-instruct"
 
-# ------------------ SESSION STATE ------------------
+# 🧠 Session state for messages
 if "messages" not in st.session_state:
-    st.session_state.messages = []
+    st.session_state.messages = [
+        {"role": "system", "content": "You are a helpful, friendly Hinglish-speaking legal assistant for Indian law. Answer clearly and correctly with legal sections, case laws, or advice when needed."}
+    ]
 
-# ------------------ DISPLAY PAST MESSAGES ------------------
-for msg in st.session_state.messages:
+# 💬 Show chat history
+for msg in st.session_state.messages[1:]:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# ------------------ USER INPUT ------------------
-user_input = st.chat_input("Ask your legal question here...")
-
+# 📥 Take user prompt
+user_input = st.chat_input("Ask a legal question...")
 if user_input:
-    # Show user input
-    st.chat_message("user").markdown(user_input)
     st.session_state.messages.append({"role": "user", "content": user_input})
+    with st.chat_message("user"):
+        st.markdown(user_input)
 
-    # Call OpenRouter API
+    # Typing animation
     with st.chat_message("assistant"):
-        with st.spinner("Thinking like a lawyer..."):
-            headers = {
+        placeholder = st.empty()
+        full_response = ""
+
+        # 🔁 Call OpenRouter API with streaming
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
                 "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json"
-            }
-
-            payload = {
+            },
+            json={
                 "model": MODEL,
-                "messages": st.session_state.messages,
-                "temperature": 0.7
-            }
+                "messages": st.session_state.messages[-10:],  # Limit history
+                "stream": True,
+            },
+            stream=True
+        )
 
-            try:
-                response = requests.post(API_URL, headers=headers, json=payload)
-                response.raise_for_status()
-                reply = response.json()["choices"][0]["message"]["content"]
-            except Exception as e:
-                reply = f"❌ Sorry, an error occurred: {e}"
+        # 🧠 Parse stream
+        for line in response.iter_lines():
+            if line:
+                decoded = line.decode("utf-8").replace("data: ", "")
+                if decoded.strip() == "[DONE]":
+                    break
+                try:
+                    data = json.loads(decoded)
+                    delta = data["choices"][0]["delta"].get("content", "")
+                    full_response += delta
+                    placeholder.markdown(full_response + "▌")
+                except Exception as e:
+                    continue
 
-            st.markdown(reply)
-            st.session_state.messages.append({"role": "assistant", "content": reply})
-
-        
+        placeholder.markdown(full_response)
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
