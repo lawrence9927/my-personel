@@ -19,12 +19,12 @@ st.markdown("""
 MODEL = "mistralai/mistral-small-3.2-24b-instruct:free"
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Use environment variable for API key
-OPENROUTER_API_KEY = os.getenv("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")
-
-if not OPENROUTER_API_KEY:
+# ✅ Get API key from environment variable
+if "API_KEY" not in os.environ:
     st.error("❌ API key not found. Please add it in your Render environment variables as 'API_KEY'.")
     st.stop()
+
+OPENROUTER_API_KEY = os.environ["API_KEY"]
 
 # ------------------ SESSION STATE ------------------
 if "messages" not in st.session_state:
@@ -62,7 +62,9 @@ if user_input:
                 response.raise_for_status()
                 reply = response.json()["choices"][0]["message"]["content"]
             except Exception as e:
-                reply = f"❌ Error: {str(e)}"
+                reply = f"❌ Sorry, an error occurred: {e}"
 
             st.markdown(reply)
             st.session_state.messages.append({"role": "assistant", "content": reply})
+
+        
