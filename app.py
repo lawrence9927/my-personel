@@ -1,72 +1,79 @@
 import streamlit as st
 import requests
-import json
 import os
+import uuid
 
-st.set_page_config(page_title="LawGuide AI", layout="centered")
+# ------------------ SETTINGS ------------------
+st.set_page_config(page_title="LawGuide", layout="wide")
+st.title("⚖️ LawGuide - Your Legal AI Assistant (India)")
+st.markdown("💬 Ask your legal questions in **Hinglish** (Hindi + English mix).")
 
-st.title("⚖️ LawGuide AI")
-st.caption("Chat with a Hinglish-speaking Indian legal assistant powered by OpenRouter")
+# ------------------ OPENROUTER CONFIG ------------------
+MODEL = "mistralai/mistral-small-3.2-24b-instruct:free"
+API_URL = "https://openrouter.ai/api/v1/chat/completions"
+API_KEY = os.environ.get("API_KEY")
 
-# 💡 Replace this with your real OpenRouter API key
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY") or st.secrets.get("OPENROUTER_API_KEY")
-if not OPENROUTER_API_KEY:
-    st.error("🚨 Please set your OpenRouter API Key as an environment variable or secret.")
+if not API_KEY:
+    st.error("❌ API key not found. Please set it in your Render environment as 'API_KEY'")
     st.stop()
 
-MODEL = "mistralai/mistral-7b-instruct"
+# ------------------ SIDEBAR & SAVED CHATS ------------------
+if "chat_sessions" not in st.session_state:
+    st.session_state.chat_sessions = {}
 
-# 🧠 Session state for messages
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "system", "content": "You are a helpful, friendly Hinglish-speaking legal assistant for Indian law. Answer clearly and correctly with legal sections, case laws, or advice when needed."}
-    ]
+if "current_chat_id" not in st.session_state:
+    chat_id = str(uuid.uuid4())
+    st.session_state.current_chat_id = chat_id
+    st.session_state.chat_sessions[chat_id] = []
 
-# 💬 Show chat history
-for msg in st.session_state.messages[1:]:
+# Sidebar: list of previous chats
+with st.sidebar:
+    st.markdown("### 📁 Saved Chats")
+    for cid in st.session_state.chat_sessions.keys():
+        if st.button(f"Chat {cid[:5]}", key=cid):
+            st.session_state.current_chat_id = cid
+
+    if st.button("🆕 New Chat"):
+        new_id = str(uuid.uuid4())
+        st.session_state.current_chat_id = new_id
+        st.session_state.chat_sessions[new_id] = []
+
+# Get current chat
+chat_id = st.session_state.current_chat_id
+messages = st.session_state.chat_sessions[chat_id]
+
+# ------------------ DISPLAY CHAT ------------------
+for msg in messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# 📥 Take user prompt
-user_input = st.chat_input("Ask a legal question...")
+# ------------------ INPUT ------------------
+user_input = st.chat_input("Ask your legal question here...")
+
 if user_input:
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
+    messages.append({"role": "user", "content": user_input})
+    st.chat_message("user").markdown(user_input)
 
-    # Typing animation
     with st.chat_message("assistant"):
-        placeholder = st.empty()
-        full_response = ""
+        with st.spinner("Thinking like a lawyer..."):
+            try:
+                response = requests.post(
+                    API_URL,
+                    headers={
+                        "Authorization": f"Bearer {API_KEY}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": MODEL,
+                        "messages": messages,
+                        "temperature": 0.7
+                    },
+                    timeout=15  # slight improvement in speed
+                )
+                response.raise_for_status()
+                reply = response.json()["choices"][0]["message"]["content"]
+            except Exception as e:
+                reply = "⚠️ Something went wrong while getting a reply."
 
-        # 🔁 Call OpenRouter API with streaming
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": MODEL,
-                "messages": st.session_state.messages[-10:],  # Limit history
-                "stream": True,
-            },
-            stream=True
-        )
-
-        # 🧠 Parse stream
-        for line in response.iter_lines():
-            if line:
-                decoded = line.decode("utf-8").replace("data: ", "")
-                if decoded.strip() == "[DONE]":
-                    break
-                try:
-                    data = json.loads(decoded)
-                    delta = data["choices"][0]["delta"].get("content", "")
-                    full_response += delta
-                    placeholder.markdown(full_response + "▌")
-                except Exception as e:
-                    continue
-
-        placeholder.markdown(full_response)
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
+            messages.append({"role": "assistant", "content": reply})
+            st.markdown(reply)
